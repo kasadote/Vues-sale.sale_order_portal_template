@@ -16,10 +16,10 @@
                     <t t-set="entries">
                         <div class="d-flex flex-column gap-4 mt-3">
                             <div class="d-flex flex-column gap-2" id="sale_order_sidebar_button">
-                                <a t-if="sale_order._has_to_be_signed()" role="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalaccept" href="#">
+                                <a t-if="sale_order._has_to_be_signed() and not sale_order.x_studio_portal_status" role="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalaccept" href="#">
                                     <i class="fa fa-check"/><t t-if="sale_order._has_to_be_paid()"> Signer &amp; Payer</t><t t-else=""> Accepter &amp; Signer</t>
                                 </a>
-                                <a t-elif="sale_order._has_to_be_paid()" role="button" id="o_sale_portal_paynow" data-bs-toggle="modal" data-bs-target="#modalaccept" href="#" t-att-class="'%s' % ('btn btn-light' if sale_order.transaction_ids else 'btn btn-primary')">
+                                <a t-elif="sale_order._has_to_be_paid() and not sale_order.x_studio_portal_status" role="button" id="o_sale_portal_paynow" data-bs-toggle="modal" data-bs-target="#modalaccept" href="#" t-att-class="'%s' % ('btn btn-light' if sale_order.transaction_ids else 'btn btn-primary')">
                                     <i class="fa fa-check"/> <t t-if="not sale_order.signature">Accepter &amp; Payer</t><t t-else="">Payer maintenant</t>
                                 </a>
                                 <div class="o_download_pdf d-flex gap-2 flex-lg-column flex-xl-row flex-wrap">
@@ -61,6 +61,14 @@
 
                 <!-- Page content -->
                 <div id="quote_content" class="col-12 col-lg-8 col-xxl-9 mt-5 mt-lg-0">
+                    <div t-if="sale_order.state == 'sale'" class="alert alert-success d-print-none" role="status">
+                        <i class="fa fa-check-circle me-1"/>
+                        <strong>Votre commande est confirmée.</strong> Merci, nous la traitons sans délai.
+                        <span t-if="sale_order.commitment_date">
+                            <br/>Date de livraison souhaitée :
+                            <strong t-field="sale_order.commitment_date" t-options="{'widget': 'date'}"/>
+                        </span>
+                    </div>
 
                     <!-- modal relative to the actions sign and pay -->
                     <div role="dialog" class="modal fade" id="modalaccept" name="sale_order_modal_sign_and_pay">
@@ -125,7 +133,7 @@
                                         pour le <b data-id="total_amount" t-field="sale_order.amount_total"/> devis.
                                         <b t-if="sale_order.payment_term_id" t-field="sale_order.payment_term_id.note" class="o_sale_payment_terms"/>
                                     </div>
-                                    
+
                                     <div class="mb-3" id="delivery_date_block" t-att-data-order-id="sale_order.id" t-att-data-token="sale_order.access_token">
                                         <label for="desired_delivery_date" class="form-label fw-bold">
                                             Date de livraison désirée <span class="text-danger">*</span>
@@ -148,11 +156,20 @@
                                             <t t-set="sale_order_id" t-value="sale_order.id"/>
                                         </t>
                                     </div>
+
+                                    <!-- Infos Interac (affichées quand l'option Virement bancaire est sélectionnée) -->
+                                    <div id="interac_info" class="alert alert-info mt-3 d-none">
+                                        <h6 class="fw-bold mb-2"><i class="fa fa-info-circle me-1"/>Instructions pour le virement Interac</h6>
+                                        <p class="mb-1">Envoyez votre virement Interac à : <strong>VOTRE_COURRIEL_INTERAC</strong></p>
+                                        <p class="mb-1">Question de sécurité : <strong>VOTRE_QUESTION</strong></p>
+                                        <p class="mb-1">Réponse : <strong>VOTRE_REPONSE</strong></p>
+                                        <p class="mb-0">Indiquez votre numéro de commande dans le message du virement.</p>
+                                    </div>
                                 </main>
                             </div>
                         </div>
                     </div>
-                    
+
                     <script type="text/javascript">
                     document.addEventListener('DOMContentLoaded', function () {
                         var block = document.getElementById('delivery_date_block');
@@ -160,16 +177,16 @@
                         var input = document.getElementById('desired_delivery_date');
                         var error = document.getElementById('delivery_date_error');
                         var posted = false;
-                    
+
                         // 1. Interdire les dates passées
                         var today = new Date().toISOString().split('T')[0];
                         input.setAttribute('min', today);
-                    
+
                         // 2. Intercepter le clic sur "Payer" avant Odoo (phase capture)
                         document.addEventListener('click', function (ev) {
                             var btn = ev.target.closest('button[name="o_payment_submit_button"]');
                             if (!btn) { return; }
-                    
+
                             if (!input.value) {
                                 ev.preventDefault();
                                 ev.stopPropagation();
@@ -178,10 +195,10 @@
                                 input.focus();
                                 return;
                             }
-                    
+
                             error.classList.add('d-none');
                             input.classList.remove('is-invalid');
-                    
+
                             // 3. Poster la date dans le chatter (une seule fois)
                             if (!posted) {
                                 posted = true;
@@ -197,7 +214,7 @@
                                             post_data: {
                                                 body: 'Date de livraison désirée : ' + input.value,
                                                 message_type: 'comment',
-                                                subtype_xmlid: 'mail.mt_comment'
+                                                subtype_xmlid: 'mail.mt_note'
                                             },
                                             token: block.dataset.token
                                         }
@@ -207,9 +224,30 @@
                         }, true);
                     });
                     </script>
-                    
-                    
-                    
+
+                    <script type="text/javascript">
+                    document.addEventListener('DOMContentLoaded', function () {
+                        var interacBlock = document.getElementById('interac_info');
+                        if (!interacBlock) { return; }
+
+                        function toggleInterac() {
+                            var selected = document.querySelector('input[name="o_payment_radio"]:checked');
+                            var isInterac = selected &amp;&amp; selected.getAttribute('data-payment-method-code') === 'wire_transfer';
+                            interacBlock.classList.toggle('d-none', !isInterac);
+                        }
+
+                        // Réagit à tout changement de mode de paiement (délégation sur document)
+                        document.addEventListener('change', function (ev) {
+                            if (ev.target &amp;&amp; ev.target.name === 'o_payment_radio') {
+                                toggleInterac();
+                            }
+                        });
+
+                        // État initial si une option est déjà cochée à l'ouverture
+                        toggleInterac();
+                    });
+                    </script>
+
                     <!-- modal relative to the action reject -->
                     <div role="dialog" class="modal fade" id="modaldecline">
                         <div class="modal-dialog">
@@ -255,13 +293,27 @@
                         Votre commande n'est pas en état d'être rejetée.
                     </div>
 
-                    <t t-if="sale_order.get_portal_last_transaction()">
+                    <t t-if="sale_order.x_studio_portal_status == 'review' and sale_order.state in ('draft', 'sent')">
+                        <div class="alert alert-info d-print-none" role="status">
+                            <h4 class="mb-1"><i class="fa fa-clock-o me-1"/> Demande reçue, en cours de validation</h4>
+                            Votre confirmation a bien été enregistrée. Notre équipe valide la disponibilité et vous confirmera les délais très rapidement.
+                        </div>
+                    </t>
+                    <t t-elif="not sale_order.x_studio_portal_status and sale_order.get_portal_last_transaction()">
                         <t t-call="payment.state_header">
                             <t t-set="tx" t-value="sale_order.get_portal_last_transaction()"/>
                         </t>
                     </t>
 
-                    <div t-if="sale_order.state == 'cancel'" class="alert alert-danger alert-dismissible d-print-none" role="alert">
+                    <!-- Cas client final : devis transféré (portail OU backend) -->
+                    <div t-if="sale_order.state == 'cancel' and sale_order.x_studio_commande_lie_id" class="alert alert-info d-print-none" role="status">
+                        <strong>Ce devis a été transféré pour traitement.</strong>
+                        Pour le suivi auprès de votre distributeur, votre numéro de commande est :
+                        <strong t-esc="sale_order.x_studio_commande_lie_id.name"/>.
+                    </div>
+
+                    <!-- Annulation réelle -->
+                    <div t-if="sale_order.state == 'cancel' and not sale_order.x_studio_commande_lie_id" class="alert alert-danger alert-dismissible d-print-none" role="alert">
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="fermer"/>
                         <strong>Ce devis a été annulé.</strong> <a role="button" href="#discussion"><i class="fa fa-comment"/> Contactez-nous pour un nouveau devis.</a>
                     </div>
@@ -277,7 +329,7 @@
                     </div>
 
                     <!-- bottom actions -->
-                    <div t-if="sale_order._has_to_be_signed() or sale_order._has_to_be_paid()" class="d-flex justify-content-center gap-1 d-print-none" name="sale_order_actions">
+                    <div t-if="(sale_order._has_to_be_signed() or sale_order._has_to_be_paid()) and not sale_order.x_studio_portal_status" class="d-flex justify-content-center gap-1 d-print-none" name="sale_order_actions">
 
                         <t t-if="sale_order._has_to_be_signed()">
                             <div class="col-sm-auto mt8">

@@ -125,6 +125,17 @@
                                         pour le <b data-id="total_amount" t-field="sale_order.amount_total"/> devis.
                                         <b t-if="sale_order.payment_term_id" t-field="sale_order.payment_term_id.note" class="o_sale_payment_terms"/>
                                     </div>
+                                    
+                                    <div class="mb-3" id="delivery_date_block" t-att-data-order-id="sale_order.id" t-att-data-token="sale_order.access_token">
+                                        <label for="desired_delivery_date" class="form-label fw-bold">
+                                            Date de livraison désirée <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="date" id="desired_delivery_date" class="form-control"/>
+                                        <small id="delivery_date_error" class="text-danger d-none">
+                                            Veuillez indiquer votre date de livraison désirée avant de payer.
+                                        </small>
+                                    </div>
+
                                     <div t-if="company_mismatch">
                                         <t t-call="payment.company_mismatch_warning"/>
                                     </div>
@@ -141,7 +152,64 @@
                             </div>
                         </div>
                     </div>
-
+                    
+                    <script type="text/javascript">
+                    document.addEventListener('DOMContentLoaded', function () {
+                        var block = document.getElementById('delivery_date_block');
+                        if (!block) { return; }
+                        var input = document.getElementById('desired_delivery_date');
+                        var error = document.getElementById('delivery_date_error');
+                        var posted = false;
+                    
+                        // 1. Interdire les dates passées
+                        var today = new Date().toISOString().split('T')[0];
+                        input.setAttribute('min', today);
+                    
+                        // 2. Intercepter le clic sur "Payer" avant Odoo (phase capture)
+                        document.addEventListener('click', function (ev) {
+                            var btn = ev.target.closest('button[name="o_payment_submit_button"]');
+                            if (!btn) { return; }
+                    
+                            if (!input.value) {
+                                ev.preventDefault();
+                                ev.stopPropagation();
+                                error.classList.remove('d-none');
+                                input.classList.add('is-invalid');
+                                input.focus();
+                                return;
+                            }
+                    
+                            error.classList.add('d-none');
+                            input.classList.remove('is-invalid');
+                    
+                            // 3. Poster la date dans le chatter (une seule fois)
+                            if (!posted) {
+                                posted = true;
+                                fetch('/mail/message/post', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        jsonrpc: '2.0',
+                                        method: 'call',
+                                        params: {
+                                            thread_model: 'sale.order',
+                                            thread_id: parseInt(block.dataset.orderId),
+                                            post_data: {
+                                                body: 'Date de livraison désirée : ' + input.value,
+                                                message_type: 'comment',
+                                                subtype_xmlid: 'mail.mt_comment'
+                                            },
+                                            token: block.dataset.token
+                                        }
+                                    })
+                                }).catch(function () { posted = false; });
+                            }
+                        }, true);
+                    });
+                    </script>
+                    
+                    
+                    
                     <!-- modal relative to the action reject -->
                     <div role="dialog" class="modal fade" id="modaldecline">
                         <div class="modal-dialog">

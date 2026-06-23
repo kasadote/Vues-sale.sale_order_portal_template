@@ -247,6 +247,7 @@ for order in records:
 # PASSAGE 2 : GESTION CLIENT FINAL
 # =========================
 orders_to_confirm = env['sale.order']
+standard_orders = env['sale.order']
 
 for order in records:
     if order.state not in ['draft', 'sent']:
@@ -257,6 +258,7 @@ for order in records:
 
     if not is_client_final:
         orders_to_confirm |= order
+        standard_orders |= order
         continue
 
     # ── CLIENT FINAL : traitement spécial ──
@@ -270,6 +272,7 @@ for order in records:
 
     if not company or company.id == partner.id:
         orders_to_confirm |= order
+        standard_orders |= order
         continue
 
     # 2) Conserver les infos du devis original
@@ -449,3 +452,17 @@ for order in records:
 # =========================
 if orders_to_confirm:
     orders_to_confirm.action_confirm()
+
+# Envoi du template de confirmation pour les commandes standards
+if standard_orders:
+    template_confirm = env['mail.template'].browse(31)
+    for so in standard_orders:
+        composer = env['mail.compose.message'].with_context(
+            default_model='sale.order',
+            default_res_ids=so.ids,
+            default_template_id=template_confirm.id,
+            default_composition_mode='comment',
+            mark_so_as_sent=True,
+            force_send=True,
+        ).create({})
+        composer._action_send_mail()
